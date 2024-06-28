@@ -96,3 +96,4 @@ uvloop==0.19.0 ; (sys_platform != "win32" and sys_platform != "cygwin") and plat
 watchfiles==0.21.0 ; python_version >= "3.11" and python_version < "3.12"
 websockets==12.0 ; python_version >= "3.11" and python_version < "3.12"
 yarl==1.9.4 ; python_version >= "3.11" and python_version < "3.12"
+OpenCC==1.1.7 ; python_version >= "3.11" and python_version < "3.12"

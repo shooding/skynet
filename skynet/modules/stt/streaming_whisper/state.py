@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import time
+import opencc
 from typing import List
 
 from skynet.env import whisper_return_transcribed_audio as return_audio
@@ -49,6 +50,7 @@ class State:
         self.perform_final_after_silent_seconds = perform_final_after_silent_seconds
         self.uuid = utils.Uuid7()
         self.transcription_id = str(self.uuid.get())
+        self.converter = opencc.OpenCC('s2t.json') if lang == 'zh' else None
 
     def _extract_transcriptions(
         self, last_pause: dict, ts_result: utils.WhisperResult, force_final: bool = False
@@ -81,15 +83,16 @@ class State:
         interim_starts_at = None
         for word in ts_result.words:
             space = ' ' if ' ' not in word.word else ''
+            converted_word = self.converter.convert(word.word) if self.converter else word.word
             # search for final up to silence
             if word.end <= last_pause['end']:
                 final_starts_at = word.start if final_starts_at is None else final_starts_at
-                final += word.word + space
+                final += converted_word + space
                 log.debug(f'Participant {self.participant_id}: final is "{final}"')
             # consider everything else as interim
             else:
                 interim_starts_at = word.start if interim_starts_at is None else interim_starts_at
-                interim += word.word + space
+                interim += converted_word + space
                 log.debug(f'Participant {self.participant_id}: interim is "{interim}"')
 
         if final.strip():
@@ -223,6 +226,8 @@ class State:
         log.debug(f'Participant {self.participant_id}: starting transcription of {len(audio)} bytes.')
         try:
             ts_result = await loop.run_in_executor(None, utils.transcribe, [audio], self.lang)
+            if self.converter:
+                ts_result.text = self.converter.convert(ts_result.text)
         except RuntimeError as e:
             log.error(f'Participant {self.participant_id}: failed to transcribe {e}')
             return None

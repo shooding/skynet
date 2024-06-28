@@ -1,5 +1,5 @@
-ARG BASE_IMAGE_BUILD=nvidia/cuda:12.3.0-devel-ubuntu20.04
-ARG BASE_IMAGE_RUN=nvidia/cuda:12.3.0-runtime-ubuntu20.04
+ARG BASE_IMAGE_BUILD=nvidia/cuda:12.2.2-cudnn8-devel-ubuntu20.04
+ARG BASE_IMAGE_RUN=nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu20.04
 
 ## Base Image
 ##
@@ -38,7 +38,7 @@ FROM ${BASE_IMAGE_RUN}
 
 RUN \
     apt-get update && \
-    apt-get install -y apt-transport-https ca-certificates gnupg
+    apt-get install -y apt-transport-https ca-certificates gnupg ffmpeg
 
 COPY docker/rootfs/ /
 COPY --chown=jitsi:jitsi docker/run-skynet.sh /opt/
