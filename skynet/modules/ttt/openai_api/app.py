@@ -1,27 +1,55 @@
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
-from llama_cpp.server.app import create_app as create_llama_cpp_app, router as llama_router, Settings
+import subprocess
 
-from skynet.env import llama_n_batch, llama_n_ctx, llama_n_gpu_layers, llama_path, model_chat_format
-from skynet.utils import dependencies, responses
-
-create_llama_cpp_app(
-    Settings(
-        chat_format=model_chat_format,
-        model=llama_path,
-        n_batch=llama_n_batch,
-        n_ctx=llama_n_ctx,
-        n_gpu_layers=llama_n_gpu_layers,
-    )
+from skynet.env import (
+    llama_n_batch,
+    llama_n_ctx,
+    llama_n_gpu_layers,
+    llama_path,
+    openai_api_server_path,
+    openai_api_server_port,
 )
+from skynet.logs import get_logger
+from skynet.modules.monitoring import OPENAI_API_RESTART_COUNTER
 
-app = FastAPI()
-app.include_router(llama_router, dependencies=dependencies, responses=responses)
+proc = None
 
-
-@app.get("/")
-def root():
-    return RedirectResponse(url='docs')
+log = get_logger(__name__)
 
 
-__all__ = ['app']
+def initialize():
+    log.info('Starting OpenAI API server...')
+
+    global proc
+
+    proc = subprocess.Popen(
+        f'{openai_api_server_path} \
+            -m {llama_path} \
+            -b {llama_n_batch} \
+            -c {llama_n_ctx} \
+            -ngl {llama_n_gpu_layers} \
+            --port {openai_api_server_port}'.split(),
+        shell=False,
+    )
+
+    if proc.poll() is not None:
+        log.error(f'Failed to start OpenAI API server from {openai_api_server_path}')
+    else:
+        log.info(f'OpenAI API server started from {openai_api_server_path}')
+
+
+def destroy():
+    log.info('Killing OpenAI API subprocess...')
+
+    proc.kill()
+
+
+def restart():
+    log.info('Restarting OpenAI API server...')
+
+    OPENAI_API_RESTART_COUNTER.inc()
+
+    destroy()
+    initialize()
+
+
+__all__ = ['destroy', 'initialize', 'restart']

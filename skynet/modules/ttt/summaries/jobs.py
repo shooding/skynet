@@ -2,21 +2,22 @@ import asyncio
 import time
 import uuid
 
-from skynet.auth.openai import get_credentials
+from skynet.auth.openai import CredentialsType, get_credentials
 
 from skynet.env import job_timeout, modules, redis_exp_seconds, summary_minimum_payload_length
 from skynet.logs import get_logger
 from skynet.modules.monitoring import (
     SUMMARY_DURATION_METRIC,
+    SUMMARY_ERROR_COUNTER,
     SUMMARY_INPUT_LENGTH_METRIC,
     SUMMARY_QUEUE_SIZE_METRIC,
     SUMMARY_TIME_IN_QUEUE_METRIC,
 )
-from skynet.utils import kill_process
+from skynet.modules.ttt.openai_api.app import restart as restart_openai_api
 
 from .persistence import db
-from .processor import process, process_open_ai
-from .v1.models import DocumentMetadata, DocumentPayload, Job, JobId, JobStatus, JobType
+from .processor import process, process_azure, process_open_ai
+from .v1.models import DocumentMetadata, DocumentPayload, Job, JobId, JobStatus, JobType, Processors
 
 log = get_logger(__name__)
 
@@ -25,6 +26,7 @@ TIME_BETWEEN_JOBS_CHECK_ON_ERROR = 10
 
 PENDING_JOBS_KEY = "jobs:pending"
 RUNNING_JOBS_KEY = "jobs:running"
+ERROR_JOBS_KEY = "jobs:error"
 
 background_task = None
 current_task = None
@@ -32,6 +34,20 @@ current_task = None
 
 def can_run_next_job() -> bool:
     return 'summaries:executor' in modules and (current_task is None or current_task.done())
+
+
+def get_job_processor(customer_id: str) -> str:
+    options = get_credentials(customer_id)
+    secret = options.get('secret')
+    api_type = options.get('type')
+
+    if secret:
+        if api_type == CredentialsType.OPENAI.value:
+            return Processors.OPENAI
+        elif api_type == CredentialsType.AZURE_OPENAI.value:
+            return Processors.AZURE
+
+    return Processors.LOCAL
 
 
 async def update_summary_queue_metric() -> None:
@@ -67,8 +83,9 @@ async def create_job(job_type: JobType, payload: DocumentPayload, metadata: Docu
 
     job_id = str(uuid.uuid4())
 
-    job = Job(id=job_id, payload=payload, type=job_type, metadata=metadata)
-
+    job = Job(
+        id=job_id, payload=payload, type=job_type, metadata=metadata, processor=get_job_processor(metadata.customer_id)
+    )
     await db.set(job_id, Job.model_dump_json(job))
 
     log.info(f"Created job {job.id}.")
@@ -116,22 +133,35 @@ async def run_job(job: Job) -> None:
         await db.rpush(RUNNING_JOBS_KEY, job.id)
 
     if len(job.payload.text) < summary_minimum_payload_length:
-        log.warning(f"Job {job.id} failed because payload is too short: \"{job.payload.text}\"")
+        log.info(f"Summarisation for {job.id} did not run because payload is too short: \"{job.payload.text}\"")
 
         result = job.payload.text
     else:
-        exit_task = asyncio.create_task(exit_on_timeout())
+        exit_task = asyncio.create_task(restart_on_timeout(job))
 
         try:
-            options = get_credentials(job.metadata.customer_id) if job.metadata.customer_id else {}
-            api_key = options.get('api_key')
-            model_name = options.get('model_name')
+            customer_id = job.metadata.customer_id
+            options = get_credentials(customer_id)
+            secret = options.get('secret')
+            processor = get_job_processor(customer_id)  # may have changed since job was created
 
-            if api_key:
-                log.info(f"Forwarding inference to OpenAI for customer {job.metadata.customer_id}")
+            if processor == Processors.OPENAI:
+                log.info(f"Forwarding inference to OpenAI for customer {customer_id}")
 
-                result = await process_open_ai(job.payload, job.type, api_key, model_name)
+                # needed for backwards compatibility
+                model = options.get('model') or options.get('metadata').get('model')
+                result = await process_open_ai(job.payload, job.type, secret, model)
+            elif processor == Processors.AZURE:
+                log.info(f"Forwarding inference to Azure openai for customer {customer_id}")
+
+                metadata = options.get('metadata')
+                result = await process_azure(
+                    job.payload, job.type, secret, metadata.get('endpoint'), metadata.get('deploymentName')
+                )
             else:
+                if customer_id:
+                    log.info(f'Customer {customer_id} has no API key configured, falling back to local processing')
+
                 result = await process(job.payload, job.type)
         except Exception as e:
             log.warning(f"Job {job.id} failed: {e}")
@@ -148,6 +178,10 @@ async def run_job(job: Job) -> None:
         status=JobStatus.ERROR if has_failed else JobStatus.SUCCESS,
         result=result,
     )
+
+    if has_failed:
+        await db.rpush(ERROR_JOBS_KEY, job.id)
+        SUMMARY_ERROR_COUNTER.inc()
 
     await db.lrem(RUNNING_JOBS_KEY, 0, job.id)
 
@@ -189,12 +223,12 @@ async def monitor_candidate_jobs() -> None:
             await asyncio.sleep(TIME_BETWEEN_JOBS_CHECK_ON_ERROR)
 
 
-async def exit_on_timeout() -> None:
+async def restart_on_timeout(job: Job) -> None:
     await asyncio.sleep(job_timeout)
 
-    log.warning(f"Job timed out after {job_timeout} seconds, exiting...")
+    log.warning(f"Job {job.id} timed out after {job_timeout} seconds, restarting...")
 
-    kill_process()
+    restart_openai_api()
 
 
 def start_monitoring_jobs() -> None:

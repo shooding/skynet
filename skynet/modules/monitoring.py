@@ -3,7 +3,6 @@ from prometheus_fastapi_instrumentator import Instrumentator, metrics
 
 PROMETHEUS_NAMESPACE = 'Skynet'
 PROMETHEUS_SUMMARIES_SUBSYSTEM = 'Summaries'
-PROMETHEUS_OPENAI_API_SUBSYSTEM = 'OpenAI_API'
 PROMETHEUS_STREAMING_WHISPER_SUBSYSTEM = 'Streaming_Whisper'
 
 REDIS_CONNECTION_STATUS = Gauge(
@@ -44,6 +43,13 @@ SUMMARY_QUEUE_SIZE_METRIC = Gauge(
     subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
 )
 
+SUMMARY_ERROR_COUNTER = Counter(
+    'summary_errors',
+    documentation='Number of jobs that have failed',
+    namespace=PROMETHEUS_NAMESPACE,
+    subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
+)
+
 CONNECTIONS_METRIC = Gauge(
     'LiveWsConnections',
     documentation='Number of active WS connections',
@@ -73,9 +79,9 @@ TRANSCRIBE_DURATION_METRIC = Histogram(
     buckets=[x / 10.0 for x in range(1, 31)],
 )
 
-FORCED_EXIT_COUNTER = Counter(
+OPENAI_API_RESTART_COUNTER = Counter(
     'forced_exit',
-    documentation='Number of forced exits',
+    documentation='Number of restarts of the OpenAI API server',
     namespace=PROMETHEUS_NAMESPACE,
     subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
 )
