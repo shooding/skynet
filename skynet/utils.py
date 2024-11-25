@@ -1,17 +1,27 @@
-import os
-
 import uvicorn
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from skynet.auth.bearer import JWTBearer
 from skynet.env import bypass_auth, ws_max_ping_interval, ws_max_ping_timeout, ws_max_queue_size, ws_max_size_bytes
 from skynet.logs import get_logger, uvicorn_log_config
-from skynet.modules.monitoring import FORCED_EXIT_COUNTER
 
 log = get_logger(__name__)
 
-dependencies = [] if bypass_auth else [Depends(JWTBearer())]
 
+def create_app(**kwargs):
+    app = FastAPI(**kwargs)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=['*'],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    return app
+
+
+dependencies = [] if bypass_auth else [Depends(JWTBearer())]
 responses = (
     {}
     if bypass_auth
@@ -36,11 +46,3 @@ async def create_webserver(app, port):
     )
     server = uvicorn.Server(server_config)
     await server.serve()
-
-
-def kill_process():
-    log.info('Killing current process')
-
-    FORCED_EXIT_COUNTER.inc()
-
-    os._exit(1)

@@ -1,8 +1,7 @@
-ARG BASE_IMAGE_BUILD=nvidia/cuda:12.2.2-cudnn8-devel-ubuntu20.04
-ARG BASE_IMAGE_RUN=nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu20.04
+ARG BASE_IMAGE_BUILD=nvidia/cuda:12.2.2-cudnn8-devel-ubuntu22.04
+ARG BASE_IMAGE_RUN=nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 
 ## Base Image
-##
 
 FROM ${BASE_IMAGE_BUILD} AS builder
 
@@ -13,40 +12,93 @@ RUN \
 COPY docker/rootfs/ /
 
 RUN \
-    apt-dpkg-wrap apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 && \
+    apt-dpkg-wrap apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 && \
     apt-dpkg-wrap apt-get update && \
-    apt-dpkg-wrap apt-get install -y build-essential python3.11 python3.11-venv && \
+    apt-dpkg-wrap apt-get install -y build-essential libcurl4-openssl-dev python3.11 python3.11-venv && \
     apt-cleanup
 
 COPY requirements.txt /app/
+
 WORKDIR /app
 
-ENV \
-    CMAKE_ARGS="-DLLAMA_CUBLAS=ON -DLLAMA_NATIVE=OFF" \
-    FORCE_CMAKE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=on
+ENV PIP_DISABLE_PIP_VERSION_CHECK=on
 
 RUN \
     python3.11 -m venv .venv && \
     . .venv/bin/activate && \
     pip install -vvv -r requirements.txt
 
-## Production Image
-##
+## Build ffmpeg
 
-FROM ${BASE_IMAGE_RUN}
+FROM ${BASE_IMAGE_RUN} AS ffmpeg_install
+
+COPY docker/rootfs/ /
+
+# ffmpeg build dependencies
+RUN \
+    apt-dpkg-wrap apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 && \
+    apt-dpkg-wrap apt-get update && \
+    apt-dpkg-wrap apt-get install -y \
+        autoconf \
+        automake \
+        build-essential \
+        cmake \
+        libopus-dev \
+        libopus0 \
+        libtool \
+        pkg-config \
+        texinfo \
+        wget \
+        yasm \
+        zlib1g \
+        zlib1g-dev && \
+    apt-cleanup
+
+# Build ffmpeg6 (required for pytorch which only supports ffmpeg < v7)
+RUN \
+    mkdir -p /opt/ffmpeg && \
+    cd /opt/ && \
+    wget -q https://www.ffmpeg.org/releases/ffmpeg-6.1.2.tar.gz && \
+    tar -xzf ffmpeg-6.1.2.tar.gz -C /opt/ffmpeg --strip-components 1 && \
+    rm ffmpeg-6.1.2.tar.gz && \
+    cd /opt/ffmpeg/ && \
+    ./configure \
+      --enable-shared \
+      --enable-gpl \
+      --enable-libopus && \
+    make && \
+    make install && \
+    ldconfig
+
+RUN \
+    apt-dpkg-wrap apt-get autoremove -y \
+        autoconf \
+        automake \
+        build-essential \
+        cmake \
+        libopus-dev \
+        libtool \
+        pkg-config \
+        texinfo \
+        wget \
+        yasm \
+        zlib1g-dev
+
+## Production Image
+
+FROM ffmpeg_install
 
 RUN \
     apt-get update && \
-    apt-get install -y apt-transport-https ca-certificates gnupg ffmpeg
+    apt-get install -y apt-transport-https ca-certificates gnupg
 
 COPY docker/rootfs/ /
 COPY --chown=jitsi:jitsi docker/run-skynet.sh /opt/
 
 RUN \
-    apt-dpkg-wrap apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 && \
+    apt-dpkg-wrap apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 && \
     apt-dpkg-wrap apt-get update && \
-    apt-dpkg-wrap apt-get install -y python3.11 python3.11-venv tini libgomp1 && \
+    apt-dpkg-wrap apt-get install -y python3.11 python3.11-venv tini libgomp1 strace gdb && \
     apt-cleanup
 
 # Principle of least privilege: create a new user for running the application
@@ -66,7 +118,10 @@ ENV \
     # https://docs.python.org/3/using/cmdline.html#envvar-PYTHONDONTWRITEBYTECODE
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
-    LLAMA_PATH="/models/llama-2-7b-chat.Q4_K_M.gguf"
+    OUTLINES_CACHE_DIR=/app/vllm/outlines \
+    VLLM_CONFIG_ROOT=/app/vllm/config \
+    HF_HOME=/app/hf  \
+    LLAMA_PATH="/models/Llama-3.1-8B-Instruct-Q8_0.gguf"
 
 VOLUME [ "/models" ]
 
@@ -76,7 +131,7 @@ RUN chown jitsi:jitsi ${PYTHONPATH}
 # Document the exposed port
 EXPOSE 8000
 
-# Use the unpriviledged user to run the application
+# Use the unprivileged user to run the application
 USER 1001
 
 # Use tini as our PID 1

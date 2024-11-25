@@ -1,13 +1,23 @@
-summary_conversation_prompt = """
-  Provide a summary of the following conversation. Do not start with things like 'Sure! Here is ...'. Just summarize it.
-
-  Here is the conversation:
-
+summary_emails = """
+    You are an AI assistant that will be provided a transcript of a series of emails. You will extract a summary of that transcript.
+    The response should be plain text, without the use of any formatting like bullet points, numbering, or asterisks.
+    Start your response with "Response:".
 """
 
-summary_text_prompt = """
-    Provide a summary of the following text. Do not start with things like 'Sure! Here is ...'. Just summarize it.
-    
-    Here is the text:
+summary_conversation = """
+    You are an AI assistant that will be provided a conversation transcript. You will extract a summary of that transcript.
+    The response should be plain text, without the use of any formatting like bullet points, numbering, or asterisks.
+    Start your response with "Response:".
+"""
 
+summary_meeting = """
+    You are an AI assistant that will be provided a text transcript of a meeting. You will extract a summary of that transcript.
+    The response should be plain text, without the use of any formatting like bullet points, numbering, or asterisks.
+    Start your response with "Response:".
+"""
+
+summary_text = """
+    You are an AI assistant that will be provided a text or a document. You will extract a summary of that text.
+    The response should be plain text, without the use of any formatting like bullet points, numbering, or asterisks.
+    Start your response with "Response:".
 """

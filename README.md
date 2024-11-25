@@ -4,7 +4,7 @@ Skynet is an API server for AI services wrapping several apps and models.
 
 It is comprised of specialized modules which can be enabled or disabled as needed.
 
-- **Summary and Action Items** with llama.cpp (enabled by default)
+- **Summary and Action Items** with vllm (or llama.cpp)
 - **Live Transcriptions** with Faster Whisper via websockets
 - 🚧 _More to follow_
 
@@ -16,18 +16,14 @@ It is comprised of specialized modules which can be enabled or disabled as neede
 ## Summaries Quickstart
 
 ```bash
-# Download the preferred GGUF llama model
-mkdir "$HOME/models"
-
-wget -q --show-progress "https://huggingface.co/jitsi/Llama-3-8B-Instruct-GGUF/resolve/main/llama-3-8b-instruct-Q4_K_M.gguf?download=true" -O "$HOME/models/llama-3-8b-instruct.Q4_K_M.gguf"
-
-export LLAMA_PATH="$HOME/models/llama-3-8b-instruct.Q4_K_M.gguf"
-
-# start Redis
-docker run -d --rm -p 6379:6379 redis 
+# if VLLM cannot be used, make sure to have Ollama started. In that case LLAMA_PATH should be the model name, like "llama3.1".
+export LLAMA_PATH="$HOME/models/Llama-3.1-8B-Instruct-Q8_0.gguf"
 
 # disable authorization (for testing)
 export BYPASS_AUTHORIZATION=1
+
+# start Redis
+docker run -d --rm -p 6379:6379 redis 
 
 poetry install
 ./run.sh
@@ -36,6 +32,9 @@ poetry install
 ```
 
 ## Live Transcriptions Quickstart
+
+> **Note**: Make sure to have ffmpeg < 7 installed and to update the `DYLD_LIBRARY_PATH` with the path to the ffmpeg 
+> libraries, e.g. `export DYLD_LIBRARY_PATH=/Users/MyUser/ffmpeg/6.1.2/lib:$DYLD_LIBRARY_PATH`.
 
 ```bash
 mkdir -p "$HOME/models/streaming-whisper"
@@ -47,6 +46,17 @@ export WHISPER_MODEL_PATH="$HOME/models/streaming-whisper"
 poetry install
 ./run.sh
 ```
+
+## Testing docker changes
+```bash
+docker compose -f compose-dev.yaml up --build
+docker cp $HOME/models/Llama-3.1-8B-Instruct-Q8_0.gguf skynet-web-1:/models
+docker restart skynet-web-1
+
+# localhost:8000 for Skynet APIs
+# localhost:8001/metrics for Prometheus metrics
+```
+
 ### Test it from Github Pages
 Go to [Streaming Whisper Demo](https://jitsi.github.io/skynet/) to test your deployment from a browser
 

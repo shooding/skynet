@@ -3,7 +3,6 @@ from prometheus_fastapi_instrumentator import Instrumentator, metrics
 
 PROMETHEUS_NAMESPACE = 'Skynet'
 PROMETHEUS_SUMMARIES_SUBSYSTEM = 'Summaries'
-PROMETHEUS_OPENAI_API_SUBSYSTEM = 'OpenAI_API'
 PROMETHEUS_STREAMING_WHISPER_SUBSYSTEM = 'Streaming_Whisper'
 
 REDIS_CONNECTION_STATUS = Gauge(
@@ -27,6 +26,15 @@ SUMMARY_DURATION_METRIC = Histogram(
     namespace=PROMETHEUS_NAMESPACE,
     subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
     buckets=[5**n for n in range(4)],
+    labelnames=['app_id'],
+)
+
+SUMMARY_FULL_DURATION_METRIC = Histogram(
+    'summary_full_duration_seconds',
+    documentation='Measures the duration of the summary / action items since they were submitted until they are done in seconds',
+    namespace=PROMETHEUS_NAMESPACE,
+    subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
+    buckets=[5**n for n in range(4)],
 )
 
 SUMMARY_TIME_IN_QUEUE_METRIC = Histogram(
@@ -40,6 +48,13 @@ SUMMARY_TIME_IN_QUEUE_METRIC = Histogram(
 SUMMARY_QUEUE_SIZE_METRIC = Gauge(
     'summary_queue_size',
     documentation='Number of jobs in the queue',
+    namespace=PROMETHEUS_NAMESPACE,
+    subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
+)
+
+SUMMARY_ERROR_COUNTER = Counter(
+    'summary_errors',
+    documentation='Number of jobs that have failed',
     namespace=PROMETHEUS_NAMESPACE,
     subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
 )
@@ -73,9 +88,9 @@ TRANSCRIBE_DURATION_METRIC = Histogram(
     buckets=[x / 10.0 for x in range(1, 31)],
 )
 
-FORCED_EXIT_COUNTER = Counter(
+OPENAI_API_RESTART_COUNTER = Counter(
     'forced_exit',
-    documentation='Number of forced exits',
+    documentation='Number of restarts of the OpenAI API server',
     namespace=PROMETHEUS_NAMESPACE,
     subsystem=PROMETHEUS_SUMMARIES_SUBSYSTEM,
 )

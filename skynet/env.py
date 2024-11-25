@@ -2,9 +2,14 @@ import os
 import sys
 import uuid
 
+import torch
+
 app_uuid = str(uuid.uuid4())
 
 is_mac = sys.platform == 'darwin'
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+use_vllm = device == 'cuda'
 
 
 # utilities
@@ -18,23 +23,26 @@ def tobool(val: str | None):
 
 
 # general
+app_port = int(os.environ.get('SKYNET_PORT', 8000))
 log_level = os.environ.get('LOG_LEVEL', 'DEBUG').strip().upper()
-supported_modules = {'summaries:dispatcher', 'summaries:executor', 'openai-api', 'streaming_whisper'}
+supported_modules = {'summaries:dispatcher', 'summaries:executor', 'streaming_whisper'}
 enabled_modules = set(os.environ.get('ENABLED_MODULES', 'summaries:dispatcher,summaries:executor').split(','))
 modules = supported_modules.intersection(enabled_modules)
 file_refresh_interval = int(os.environ.get('FILE_REFRESH_INTERVAL', 30))
 
 # models
+llama_path = os.environ.get('LLAMA_PATH', 'llama3.1')
+llama_n_ctx = int(os.environ.get('LLAMA_N_CTX', 128000))
 
-# Some formats are auto-detected: https://github.com/abetlen/llama-cpp-python/blob/c50d3300d2a09c98765be7f2c05b7e4fd0b4232e/llama_cpp/llama_chat_format.py#L724
-model_chat_format = os.environ.get('MODEL_CHAT_FORMAT')
-llama_path = os.environ.get('LLAMA_PATH')
-llama_n_ctx = int(os.environ.get('LLAMA_N_CTX', 8192))
-llama_n_gpu_layers = int(os.environ.get('LLAMA_N_GPU_LAYERS', -1 if is_mac else 40))
-llama_n_batch = int(os.environ.get('LLAMA_N_BATCH', 512))
+# azure openai api
+# latest ga version https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation#latest-ga-api-release
+azure_openai_api_version = os.environ.get('AZURE_OPENAI_API_VERSION', '2024-02-01')
 
 # openai api
-openai_api_base_url = os.environ.get('OPENAI_API_BASE_URL', 'http://localhost:8000/openai-api/v1')
+vllm_server_port = int(os.environ.get('VLLM_SERVER_PORT', 8003))
+openai_api_base_url = os.environ.get(
+    'OPENAI_API_BASE_URL', f'http://localhost:{vllm_server_port}' if use_vllm else "http://localhost:11434"
+)
 
 # openai
 openai_credentials_file = os.environ.get('SKYNET_CREDENTIALS_PATH')
@@ -43,6 +51,7 @@ openai_credentials_file = os.environ.get('SKYNET_CREDENTIALS_PATH')
 bypass_auth = tobool(os.environ.get('BYPASS_AUTHORIZATION'))
 asap_pub_keys_url = os.environ.get('ASAP_PUB_KEYS_REPO_URL')
 asap_pub_keys_folder = os.environ.get('ASAP_PUB_KEYS_FOLDER')
+asap_pub_keys_fallback_folder = os.environ.get('ASAP_PUB_KEYS_FALLBACK_FOLDER')
 asap_pub_keys_auds = os.environ.get('ASAP_PUB_KEYS_AUDS', '').strip().split(',')
 asap_pub_keys_max_cache_size = int(os.environ.get('ASAP_PUB_KEYS_MAX_CACHE_SIZE', 512))
 
@@ -81,14 +90,19 @@ ws_max_ping_timeout = int(os.environ.get('WS_MAX_PING_TIMEOUT', 30))
 
 
 # jobs
-job_timeout = int(os.environ.get('JOB_TIMEOUT', 60 * 10))  # 10 minutes default
+job_timeout = int(os.environ.get('JOB_TIMEOUT', 60 * 5))  # 5 minutes default
 
 # summaries
-summary_default_hint_type = os.environ.get('SUMMARY_DEFAULT_HINT_TYPE', 'text')
 summary_minimum_payload_length = int(os.environ.get('SUMMARY_MINIMUM_PAYLOAD_LENGTH', 100))
+enable_batching = tobool(os.environ.get('ENABLE_BATCHING', 'true'))
 
 # monitoring
 enable_metrics = tobool(os.environ.get('ENABLE_METRICS', 'true'))
 
 # load balancing
 enable_haproxy_agent = tobool(os.environ.get('ENABLE_HAPROXY_AGENT'))
+
+# testing
+echo_requests_base_url = os.environ.get('ECHO_REQUESTS_BASE_URL')
+echo_requests_percent = int(os.environ.get('ECHO_REQUESTS_PERCENT', 100))
+echo_requests_token = os.environ.get('ECHO_REQUESTS_TOKEN')

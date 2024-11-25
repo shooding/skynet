@@ -18,10 +18,32 @@ def _get_session():
     return _session
 
 
-async def get(url):
+async def get(url, type='json', **kwargs):
     session = _get_session()
-    async with session.get(url) as response:
+    async with session.get(url, **kwargs) as response:
+        if type == 'json':
+            return await response.json()
+
         return await response.text()
 
 
-__all__ = ['get']
+async def post(url, **kwargs):
+    session = _get_session()
+    async with session.post(url, **kwargs) as response:
+        return await response.json()
+
+
+async def request(method, url, **kwargs) -> aiohttp.ClientResponse:
+    session = _get_session()
+
+    return await session.request(method, url, **kwargs)
+
+
+async def close():
+    if _session is not None:
+        await _session.close()
+
+        _session = None
+
+
+__all__ = ['close', 'get', 'post', 'request']
